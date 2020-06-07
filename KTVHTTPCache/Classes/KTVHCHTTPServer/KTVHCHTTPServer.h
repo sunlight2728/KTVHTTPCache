@@ -8,21 +8,18 @@
 
 #import <Foundation/Foundation.h>
 
-
 @interface KTVHCHTTPServer : NSObject
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
 + (instancetype)server;
 
-@property (nonatomic, assign, readonly) BOOL running;
+@property (nonatomic, readonly, getter=isRunning) BOOL running;
 
-- (void)start:(NSError **)error;
+- (BOOL)start:(NSError **)error;
 - (void)stop;
 
-- (NSString *)URLStringWithOriginalURLString:(NSString *)urlString;
-
+- (NSURL *)URLWithOriginalURL:(NSURL *)URL;
 
 @end

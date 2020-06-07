@@ -7,49 +7,24 @@
 //
 
 #import "KTVHCDataCacheItem.h"
-#import "KTVHCDataPrivate.h"
-
-
-@interface KTVHCDataCacheItem ()
-
-
-@property (nonatomic, copy) NSString * URLString;
-@property (nonatomic, assign) long long totalLength;
-@property (nonatomic, assign) long long cacheLength;
-@property (nonatomic, copy) NSArray <KTVHCDataCacheItemZone *> * zones;
-
-
-@end
-
+#import "KTVHCData+Internal.h"
 
 @implementation KTVHCDataCacheItem
 
-
-+ (instancetype)itemWithURLString:(NSString *)URLString
-                      totalLength:(long long)totalLength
-                      cacheLength:(long long)cacheLength
-                            zones:(NSArray <KTVHCDataCacheItemZone *> *)zones
+- (instancetype)initWithURL:(NSURL *)URL
+                      zones:(NSArray<KTVHCDataCacheItemZone *> *)zones
+                totalLength:(long long)totalLength
+                cacheLength:(long long)cacheLength
+                vaildLength:(long long)vaildLength
 {
-    return [[self alloc] initWithURLString:URLString
-                               totalLength:totalLength
-                               cacheLength:cacheLength
-                                     zones:zones];
-}
-
-- (instancetype)initWithURLString:(NSString *)URLString
-                      totalLength:(long long)totalLength
-                      cacheLength:(long long)cacheLength
-                            zones:(NSArray <KTVHCDataCacheItemZone *> *)zones
-{
-    if (self = [super init])
-    {
-        self.URLString = URLString;
-        self.totalLength = totalLength;
-        self.cacheLength = cacheLength;
-        self.zones = zones;
+    if (self = [super init]) {
+        self->_URL = [URL copy];
+        self->_zones = [zones copy];
+        self->_totalLength = totalLength;
+        self->_cacheLength = cacheLength;
+        self->_vaildLength = vaildLength;
     }
     return self;
 }
-
 
 @end

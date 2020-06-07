@@ -11,81 +11,55 @@
 
 @class KTVHCDataUnit;
 
-
 @protocol KTVHCDataUnitDelegate <NSObject>
 
-@optional
-- (void)unitDidUpdateTotalContentLength:(KTVHCDataUnit *)unit;
-- (void)unitDidUpdateMetadata:(KTVHCDataUnit *)unit;
+- (void)ktv_unitDidChangeMetadata:(KTVHCDataUnit *)unit;
 
 @end
-
-
-@protocol KTVHCDataUnitWorkingDelegate <NSObject>
-
-@optional
-- (void)unitDidStopWorking:(KTVHCDataUnit *)unit;
-
-@end
-
 
 @interface KTVHCDataUnit : NSObject <NSCoding, NSLocking>
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)unitWithURLString:(NSString *)URLString;
+- (instancetype)initWithURL:(NSURL *)URL;
 
-@property (nonatomic, copy, readonly) NSString * URLString;
-@property (nonatomic, copy, readonly) NSString * uniqueIdentifier;
+@property (nonatomic, copy, readonly) NSError *error;
 
-@property (nonatomic, assign, readonly) NSTimeInterval createTimeInterval;
-@property (nonatomic, assign, readonly) NSTimeInterval lastItemCerateInterval;
+@property (nonatomic, copy, readonly) NSURL *URL;
+@property (nonatomic, copy, readonly) NSURL *completeURL;
+@property (nonatomic, copy, readonly) NSString *key;       // Unique Identifier.
+@property (nonatomic, copy, readonly) NSDictionary *responseHeaders;
+@property (nonatomic, readonly) NSTimeInterval createTimeInterval;
+@property (nonatomic, readonly) NSTimeInterval lastItemCreateInterval;
+@property (nonatomic, readonly) long long totalLength;
+@property (nonatomic, readonly) long long cacheLength;
+@property (nonatomic, readonly) long long validLength;
 
-@property (nonatomic, copy, readonly) NSDictionary * requestHeaderFields;
-@property (nonatomic, copy, readonly) NSDictionary * requestHeaderFieldsWithoutRange;
-@property (nonatomic, copy, readonly) NSDictionary * responseHeaderFields;
-@property (nonatomic, copy, readonly) NSDictionary * responseHeaderFieldsWithoutRangeAndLength;
-
-@property (nonatomic, assign, readonly) long long totalContentLength;
-@property (nonatomic, assign, readonly) long long totalCacheLength;
-
-@property (nonatomic, strong, readonly) NSMutableArray <KTVHCDataUnitItem *> * unitItems;
-
-
-#pragma mark - Control
-
-- (void)sortUnitItems;
+/**
+ *  Unit Item
+ */
+- (NSArray<KTVHCDataUnitItem *> *)unitItems;
 - (void)insertUnitItem:(KTVHCDataUnitItem *)unitItem;
-- (void)updateRequestHeaderFields:(NSDictionary *)requestHeaderFields;
-- (void)updateResponseHeaderFields:(NSDictionary *)responseHeaderFields;
 
+/**
+ *  Info Sync
+ */
+- (void)updateResponseHeaders:(NSDictionary *)responseHeaders totalLength:(long long)totalLength;
 
-#pragma mark - Delegate
-
-@property (nonatomic, weak, readonly) id <KTVHCDataUnitDelegate> delegate;
-@property (nonatomic, strong, readonly) dispatch_queue_t delegateQueue;
-
-- (void)setDelegate:(id <KTVHCDataUnitDelegate>)delegate delegateQueue:(dispatch_queue_t)delegateQueue;
-
-
-#pragma mark - Working State
-
-@property (nonatomic, weak) id <KTVHCDataUnitWorkingDelegate> workingDelegate;
-
-@property (nonatomic, assign, readonly) BOOL working;
+/**
+ *  Working
+ */
+@property (nonatomic, readonly) NSInteger workingCount;
 
 - (void)workingRetain;
 - (void)workingRelease;
 
-
-#pragma mark - File
-
-@property (nonatomic, copy, readonly) NSString * absolutePathForFileDirectory;
+/**
+ *  File Control
+ */
+@property (nonatomic, weak) id <KTVHCDataUnitDelegate> delegate;
 
 - (void)deleteFiles;
-- (BOOL)mergeFiles;
-
 
 @end

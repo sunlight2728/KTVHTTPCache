@@ -7,84 +7,64 @@
 //
 
 #import "KTVHCDataUnit.h"
-#import "KTVHCURLTools.h"
-#import "KTVHCPathTools.h"
-#import "KTVHCDataCallback.h"
+#import "KTVHCPathTool.h"
+#import "KTVHCURLTool.h"
+#import "KTVHCError.h"
 #import "KTVHCLog.h"
-
 
 @interface KTVHCDataUnit ()
 
-
-@property (nonatomic, copy) NSString * URLString;
-@property (nonatomic, copy) NSString * uniqueIdentifier;
-
-@property (nonatomic, assign) NSTimeInterval createTimeInterval;
-
-@property (nonatomic, copy) NSDictionary * requestHeaderFields;
-@property (nonatomic, copy) NSDictionary * responseHeaderFields;
-
-@property (nonatomic, assign) long long totalContentLength;
-@property (nonatomic, assign) long long totalCacheLength;
-
-@property (nonatomic, strong) NSLock * coreLock;
-@property (nonatomic, strong) NSMutableArray <KTVHCDataUnitItem *> * unitItems;
-
-@property (nonatomic, assign) NSInteger workingCount;
-
-@property (nonatomic, weak) id <KTVHCDataUnitDelegate> delegate;
-@property (nonatomic, strong) dispatch_queue_t delegateQueue;
-
+@property (nonatomic, strong) NSRecursiveLock *coreLock;
+@property (nonatomic, strong) NSMutableArray<KTVHCDataUnitItem *> *unitItemsInternal;
+@property (nonatomic, strong) NSMutableArray<NSArray<KTVHCDataUnitItem *> *> *lockingUnitItems;
 
 @end
 
-
 @implementation KTVHCDataUnit
 
-
-+ (instancetype)unitWithURLString:(NSString *)URLString
+- (instancetype)initWithURL:(NSURL *)URL
 {
-    return [[self alloc] initWithURLString:URLString];
-}
-
-- (instancetype)initWithURLString:(NSString *)URLString
-{
-    if (self = [super init])
-    {
-        KTVHCLogAlloc(self);
-        self.URLString = URLString;
-        self.uniqueIdentifier = [KTVHCURLTools uniqueIdentifierWithURLString:self.URLString];
-        self.createTimeInterval = [NSDate date].timeIntervalSince1970;
-        [self prepare];
+    if (self = [super init]) {
+        self->_URL = [URL copy];
+        self->_key = [[KTVHCURLTool tool] keyWithURL:self.URL];
+        self->_createTimeInterval = [NSDate date].timeIntervalSince1970;
+        [self commonInit];
     }
     return self;
 }
 
 - (instancetype)initWithCoder:(NSCoder *)aDecoder
 {
-    if (self = [super init])
-    {
-        self.URLString = [aDecoder decodeObjectForKey:@"URLString"];
-        self.uniqueIdentifier = [aDecoder decodeObjectForKey:@"uniqueIdentifier"];
-        self.createTimeInterval = [[aDecoder decodeObjectForKey:@"createTimeInterval"] doubleValue];
-        self.requestHeaderFields = [aDecoder decodeObjectForKey:@"requestHeaderFields"];
-        self.responseHeaderFields = [aDecoder decodeObjectForKey:@"responseHeaderFields"];
-        self.totalContentLength = [[aDecoder decodeObjectForKey:@"totalContentLength"] longLongValue];
-        self.unitItems = [aDecoder decodeObjectForKey:@"unitItems"];
-        [self prepare];
+    if (self = [super init]) {
+        @try {
+            self->_URL = [NSURL URLWithString:[aDecoder decodeObjectForKey:@"URLString"]];
+            self->_key = [aDecoder decodeObjectForKey:@"uniqueIdentifier"];
+        } @catch (NSException *exception) {
+            self->_error = [KTVHCError errorForException:exception];
+        }
+        @try {
+            self->_createTimeInterval = [[aDecoder decodeObjectForKey:@"createTimeInterval"] doubleValue];
+            self->_responseHeaders = [aDecoder decodeObjectForKey:@"responseHeaderFields"];
+            self->_totalLength = [[aDecoder decodeObjectForKey:@"totalContentLength"] longLongValue];
+            self->_unitItemsInternal = [[aDecoder decodeObjectForKey:@"unitItems"] mutableCopy];
+            [self commonInit];
+        } @catch (NSException *exception) {
+            self->_error = [KTVHCError errorForException:exception];
+        }
     }
     return self;
 }
 
 - (void)encodeWithCoder:(NSCoder *)aCoder
 {
-    [aCoder encodeObject:self.URLString forKey:@"URLString"];
-    [aCoder encodeObject:self.uniqueIdentifier forKey:@"uniqueIdentifier"];
+    [self lock];
+    [aCoder encodeObject:self.URL.absoluteString forKey:@"URLString"];
+    [aCoder encodeObject:self.key forKey:@"uniqueIdentifier"];
     [aCoder encodeObject:@(self.createTimeInterval) forKey:@"createTimeInterval"];
-    [aCoder encodeObject:self.requestHeaderFields forKey:@"requestHeaderFields"];
-    [aCoder encodeObject:self.responseHeaderFields forKey:@"responseHeaderFields"];
-    [aCoder encodeObject:@(self.totalContentLength) forKey:@"totalContentLength"];
-    [aCoder encodeObject:self.unitItems forKey:@"unitItems"];
+    [aCoder encodeObject:self.responseHeaders forKey:@"responseHeaderFields"];
+    [aCoder encodeObject:@(self.totalLength) forKey:@"totalContentLength"];
+    [aCoder encodeObject:self.unitItemsInternal forKey:@"unitItems"];
+    [self unlock];
 }
 
 - (void)dealloc
@@ -92,37 +72,31 @@
     KTVHCLogDealloc(self);
 }
 
-
-- (void)prepare
+- (void)commonInit
 {
-    self.coreLock = [[NSLock alloc] init];
-    if (!self.unitItems) {
-        self.unitItems = [NSMutableArray array];
+    KTVHCLogAlloc(self);
+    [self lock];
+    if (!self.unitItemsInternal) {
+        self.unitItemsInternal = [NSMutableArray array];
     }
-    
-    if (self.unitItems.count > 0)
-    {
-        NSMutableArray * removeArray = [NSMutableArray array];
-        for (KTVHCDataUnitItem * obj in self.unitItems)
-        {
-            if (obj.length <= 0) {
-                [removeArray addObject:obj];
-            }
+    NSMutableArray *removal = [NSMutableArray array];
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        if (obj.length == 0) {
+            [KTVHCPathTool deleteFileAtPath:obj.absolutePath];
+            [removal addObject:obj];
         }
-        [self.unitItems removeObjectsInArray:removeArray];
-        [removeArray removeAllObjects];
-        [self sortUnitItems];
     }
-    
-    KTVHCLogDataUnit(@"prepare result, %@, %ld", self.URLString, self.unitItems.count);
+    [self.unitItemsInternal removeObjectsInArray:removal];
+    [self sortUnitItems];
+    KTVHCLogDataUnit(@"%p, Create Unit\nURL : %@\nkey : %@\ntimeInterval : %@\ntotalLength : %lld\ncacheLength : %lld\nvaildLength : %lld\nresponseHeaders : %@\nunitItems : %@", self, self.URL, self.key, [NSDate dateWithTimeIntervalSince1970:self.createTimeInterval], self.totalLength, self.cacheLength, self.validLength, self.responseHeaders, self.unitItemsInternal);
+    [self unlock];
 }
 
 - (void)sortUnitItems
 {
-    for (KTVHCDataUnitItem * obj in self.unitItems) {
-        [obj lock];
-    }
-    [self.unitItems sortUsingComparator:^NSComparisonResult(KTVHCDataUnitItem * obj1, KTVHCDataUnitItem * obj2) {
+    [self lock];
+    KTVHCLogDataUnit(@"%p, Sort unitItems - Begin\n%@", self, self.unitItemsInternal);
+    [self.unitItemsInternal sortUsingComparator:^NSComparisonResult(KTVHCDataUnitItem *obj1, KTVHCDataUnitItem *obj2) {
         NSComparisonResult result = NSOrderedDescending;
         if (obj1.offset < obj2.offset) {
             result = NSOrderedAscending;
@@ -131,112 +105,108 @@
         }
         return result;
     }];
-    for (KTVHCDataUnitItem * obj in self.unitItems) {
-        [obj unlock];
+    KTVHCLogDataUnit(@"%p, Sort unitItems - End  \n%@", self, self.unitItemsInternal);
+    [self unlock];
+}
+
+- (NSArray<KTVHCDataUnitItem *> *)unitItems
+{
+    [self lock];
+    NSMutableArray *objs = [NSMutableArray array];
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        [objs addObject:[obj copy]];
     }
+    KTVHCLogDataUnit(@"%p, Get unitItems\n%@", self, self.unitItemsInternal);
+    [self unlock];
+    return objs;
 }
 
 - (void)insertUnitItem:(KTVHCDataUnitItem *)unitItem
 {
     [self lock];
-    [self.unitItems addObject:unitItem];
+    [self.unitItemsInternal addObject:unitItem];
     [self sortUnitItems];
-    
-    KTVHCLogDataUnit(@"insert unit item, %lld", unitItem.offset);
-    
+    KTVHCLogDataUnit(@"%p, Insert unitItem, %@", self, unitItem);
     [self unlock];
+    [self.delegate ktv_unitDidChangeMetadata:self];
 }
 
-- (void)updateRequestHeaderFields:(NSDictionary *)requestHeaderFields
+- (void)updateResponseHeaders:(NSDictionary *)responseHeaders totalLength:(long long)totalLength
 {
-    self.requestHeaderFields = requestHeaderFields;
-    
-    KTVHCLogDataUnit(@"update request\n%@", self.requestHeaderFields);
-}
-
-- (void)updateResponseHeaderFields:(NSDictionary *)responseHeaderFields
-{
-    self.responseHeaderFields = responseHeaderFields;
-    
-    NSString * contentRange = [self.responseHeaderFields objectForKey:@"Content-Range"];
-    if (!contentRange) {
-        contentRange = [self.responseHeaderFields objectForKey:@"content-range"];
-    }
-    
-    NSRange range = [contentRange rangeOfString:@"/"];
-    if (contentRange.length > 0 && range.location != NSNotFound) {
-        self.totalContentLength = [contentRange substringFromIndex:range.location + range.length].longLongValue;
-    }
-    
-    KTVHCLogDataUnit(@"update response\n%@", self.responseHeaderFields);
-}
-
-
-#pragma mark - Setter/Getter
-
-- (void)setTotalContentLength:(long long)totalContentLength
-{
-    if (_totalContentLength != totalContentLength)
-    {
-        _totalContentLength = totalContentLength;
-        
-        KTVHCLogDataUnit(@"set total content length, %lld", totalContentLength);
-        
-        if ([self.delegate respondsToSelector:@selector(unitDidUpdateTotalContentLength:)]) {
-            [KTVHCDataCallback callbackWithQueue:self.delegateQueue block:^{
-                [self.delegate unitDidUpdateTotalContentLength:self];
-            }];
+    [self lock];
+    BOOL needs = NO;
+    static NSArray *whiteList = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        whiteList = @[@"Accept-Ranges",
+                      @"Connection",
+                      @"Content-Type",
+                      @"Server"];
+    });
+    NSMutableDictionary *headers = [NSMutableDictionary dictionary];
+    for (NSString *key in whiteList) {
+        NSString *value = [responseHeaders objectForKey:key];
+        if (value) {
+            [headers setObject:value forKey:key];
         }
     }
+    if (self.totalLength != totalLength || ![self.responseHeaders isEqualToDictionary:headers]) {
+        self->_responseHeaders = headers;
+        self->_totalLength = totalLength;
+        needs = YES;
+    }
+    KTVHCLogDataUnit(@"%p, Update responseHeaders\ntotalLength : %lld\n%@", self, self.totalLength, self.responseHeaders);
+    [self unlock];
+    if (needs) {
+        [self.delegate ktv_unitDidChangeMetadata:self];
+    }
 }
 
-- (long long)totalCacheLength
+- (NSURL *)completeURL
 {
-    long long length = 0;
     [self lock];
-    for (KTVHCDataUnitItem * obj in self.unitItems)
-    {
+    NSURL *completeURL = nil;
+    KTVHCDataUnitItem *item = self.unitItemsInternal.firstObject;
+    if (item.offset == 0 && item.length > 0 && item.length == self.totalLength) {
+        completeURL = [NSURL fileURLWithPath:item.absolutePath];
+        KTVHCLogDataUnit(@"%p, Get file path\n%@", self, completeURL);
+    }
+    [self unlock];
+    return completeURL;
+}
+
+- (long long)cacheLength
+{
+    [self lock];
+    long long length = 0;
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
         length += obj.length;
     }
     [self unlock];
     return length;
 }
 
-- (NSDictionary *)requestHeaderFieldsWithoutRange
+- (long long)validLength
 {
-    if ([self.requestHeaderFields objectForKey:@"Range"]) {
-        NSMutableDictionary * headers = [NSMutableDictionary dictionaryWithDictionary:self.requestHeaderFields];
-        [headers removeObjectForKey:@"Range"];
-        return headers;
+    [self lock];
+    long long offset = 0;
+    long long length = 0;
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        long long invalidLength = MAX(offset - obj.offset, 0);
+        long long vaildLength = MAX(obj.length - invalidLength, 0);
+        offset = MAX(offset, obj.offset + obj.length);
+        length += vaildLength;
     }
-    return self.requestHeaderFields;
+    [self unlock];
+    return length;
 }
 
-- (NSDictionary *)responseHeaderFieldsWithoutRangeAndLength
-{
-    if ([self.responseHeaderFields objectForKey:@"Content-Range"]
-        || [self.responseHeaderFields objectForKey:@"Content-Length"]
-        || [self.responseHeaderFields objectForKey:@"content-range"]
-        || [self.responseHeaderFields objectForKey:@"content-length"])
-    {
-        NSMutableDictionary * headers = [NSMutableDictionary dictionaryWithDictionary:self.responseHeaderFields];
-        [headers removeObjectForKey:@"Content-Range"];
-        [headers removeObjectForKey:@"Content-Length"];
-        [headers removeObjectForKey:@"content-range"];
-        [headers removeObjectForKey:@"content-length"];
-        return headers;
-    }
-    return self.responseHeaderFields;
-}
-
-- (NSTimeInterval)lastItemCerateInterval
+- (NSTimeInterval)lastItemCreateInterval
 {
     [self lock];
     NSTimeInterval timeInterval = self.createTimeInterval;
-    for (KTVHCDataUnitItem * obj in self.unitItems)
-    {
-        if (obj.createTimeInterval > timeInterval)
-        {
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        if (obj.createTimeInterval > timeInterval) {
             timeInterval = obj.createTimeInterval;
         }
     }
@@ -244,94 +214,149 @@
     return timeInterval;
 }
 
-- (void)setDelegate:(id <KTVHCDataUnitDelegate>)delegate delegateQueue:(dispatch_queue_t)delegateQueue
-{
-    self.delegate = delegate;
-    self.delegateQueue = delegateQueue;
-}
-
-
-#pragma mark - Working State
-
-- (BOOL)working
-{
-    [self lock];
-    BOOL working = self.workingCount > 0;
-    [self unlock];
-    return working;
-}
-
 - (void)workingRetain
 {
     [self lock];
-    self.workingCount++;
-    
-    KTVHCLogDataUnit(@"working retain, %@, %ld", self.URLString, self.workingCount);
-    
+    self->_workingCount += 1;
+    KTVHCLogDataUnit(@"%p, Working retain  : %ld", self, (long)self.workingCount);
     [self unlock];
 }
 
 - (void)workingRelease
 {
     [self lock];
-    self.workingCount--;
-    
-    KTVHCLogDataUnit(@"working release, %@, %ld", self.URLString, self.workingCount);
-    
-    if (self.workingCount <= 0)
-    {
-        if ([self.workingDelegate respondsToSelector:@selector(unitDidStopWorking:)])
-        {
-            KTVHCLogDataUnit(@"working release callback add, %@, %ld", self.URLString, self.workingCount);
-            
-            [KTVHCDataCallback workingCallbackWithBlock:^{
-                
-                KTVHCLogDataUnit(@"working release callback begin, %@, %ld", self.URLString, self.workingCount);
-                
-                [self.workingDelegate unitDidStopWorking:self];
-                
-                KTVHCLogDataUnit(@"working release callback end, %@, %ld", self.URLString, self.workingCount);
-            }];
-        }
-    }
-    
+    self->_workingCount -= 1;
+    KTVHCLogDataUnit(@"%p, Working release : %ld", self, (long)self.workingCount);
+    BOOL needs = [self mergeFilesIfNeeded];
     [self unlock];
-}
-
-
-#pragma mark - File
-
-- (NSString *)absolutePathForFileDirectory
-{
-    return [KTVHCPathTools absolutePathForDirectoryWithURLString:self.URLString];
+    if (needs) {
+        [self.delegate ktv_unitDidChangeMetadata:self];
+    }
 }
 
 - (void)deleteFiles
 {
-    [KTVHCPathTools deleteFolderAtPath:self.absolutePathForFileDirectory];
+    if (!self.URL) {
+        return;
+    }
+    [self lock];
+    NSString *path = [KTVHCPathTool directoryPathWithURL:self.URL];
+    [KTVHCPathTool deleteDirectoryAtPath:path];
+    KTVHCLogDataUnit(@"%p, Delete files", self);
+    [self unlock];
 }
 
-- (BOOL)mergeFiles
+- (BOOL)mergeFilesIfNeeded
 {
-    if (self.working || self.unitItems.count <= 1) {
+    [self lock];
+    if (self.workingCount > 0 || self.totalLength == 0 || self.unitItemsInternal.count == 0) {
+        [self unlock];
         return NO;
     }
-    
-    return NO;
+    NSString *path = [KTVHCPathTool completeFilePathWithURL:self.URL];
+    if ([self.unitItemsInternal.firstObject.absolutePath isEqualToString:path]) {
+        [self unlock];
+        return NO;
+    }
+    if (self.totalLength != self.validLength) {
+        [self unlock];
+        return NO;
+    }
+    NSError *error = nil;
+    long long offset = 0;
+    [KTVHCPathTool deleteFileAtPath:path];
+    [KTVHCPathTool createFileAtPath:path];
+    NSFileHandle *writingHandle = [NSFileHandle fileHandleForWritingAtPath:path];
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        if (error) {
+            break;
+        }
+        NSAssert(offset >= obj.offset, @"invaild unit item.");
+        if (offset >= (obj.offset + obj.length)) {
+            KTVHCLogDataUnit(@"%p, Merge files continue", self);
+            continue;
+        }
+        NSFileHandle *readingHandle = [NSFileHandle fileHandleForReadingAtPath:obj.absolutePath];
+        @try {
+            [readingHandle seekToFileOffset:offset - obj.offset];
+        } @catch (NSException *exception) {
+            KTVHCLogDataUnit(@"%p, Merge files seek exception\n%@", self, exception);
+            error = [KTVHCError errorForException:exception];
+        }
+        if (error) {
+            break;
+        }
+        while (!error) {
+            @autoreleasepool {
+                NSData *data = [readingHandle readDataOfLength:1024 * 1024 * 1];
+                if (data.length == 0) {
+                    KTVHCLogDataUnit(@"%p, Merge files break", self);
+                    break;
+                }
+                KTVHCLogDataUnit(@"%p, Merge write data : %lld", self, (long long)data.length);
+                @try {
+                    [writingHandle writeData:data];
+                } @catch (NSException *exception) {
+                    KTVHCLogDataUnit(@"%p, Merge files write exception\n%@", self, exception);
+                    error = [KTVHCError errorForException:exception];
+                }
+            }
+        }
+        [readingHandle closeFile];
+        offset = obj.offset + obj.length;
+        KTVHCLogDataUnit(@"%p, Merge next : %lld", self, offset);
+    }
+    @try {
+        [writingHandle synchronizeFile];
+        [writingHandle closeFile];
+    } @catch (NSException *exception) {
+        KTVHCLogDataUnit(@"%p, Merge files close exception, %@", self, exception);
+        error = [KTVHCError errorForException:exception];
+    }
+    KTVHCLogDataUnit(@"%p, Merge finished\ntotalLength : %lld\noffset : %lld", self, self.totalLength, offset);
+    if (error || [KTVHCPathTool sizeAtPath:path] != self.totalLength) {
+        [KTVHCPathTool deleteFileAtPath:path];
+        [self unlock];
+        return NO;
+    }
+    KTVHCLogDataUnit(@"%p, Merge replace items", self);
+    KTVHCDataUnitItem *item = [[KTVHCDataUnitItem alloc] initWithPath:path];
+    for (KTVHCDataUnitItem *obj in self.unitItemsInternal) {
+        [KTVHCPathTool deleteFileAtPath:obj.absolutePath];
+    }
+    [self.unitItemsInternal removeAllObjects];
+    [self.unitItemsInternal addObject:item];
+    [self unlock];
+    return YES;
 }
-
-
-#pragma mark - NSLocking
 
 - (void)lock
 {
+    if (!self.coreLock) {
+        self.coreLock = [[NSRecursiveLock alloc] init];
+    }
     [self.coreLock lock];
+    if (!self.lockingUnitItems) {
+        self.lockingUnitItems = [NSMutableArray array];
+    }
+    NSArray<KTVHCDataUnitItem *> *objs = [NSArray arrayWithArray:self.unitItemsInternal];
+    [self.lockingUnitItems addObject:objs];
+    for (KTVHCDataUnitItem *obj in objs) {
+        [obj lock];
+    }
 }
 
 - (void)unlock
 {
+    NSArray<KTVHCDataUnitItem *> *objs = self.lockingUnitItems.lastObject;
+    [self.lockingUnitItems removeLastObject];
+    if (self.lockingUnitItems.count <= 0) {
+        self.lockingUnitItems = nil;
+    }
+    for (KTVHCDataUnitItem *obj in objs) {
+        [obj unlock];
+    }
     [self.coreLock unlock];
 }
-
 
 @end

@@ -7,33 +7,17 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "KTVHCCommon.h"
-
-
-typedef NSString * KTVHCDataContentType;
-
-KTVHTTPCACHE_EXTERN KTVHCDataContentType const KTVHCDataContentTypeVideo;
-KTVHTTPCACHE_EXTERN KTVHCDataContentType const KTVHCDataContentTypeAudio;
-KTVHTTPCACHE_EXTERN KTVHCDataContentType const KTVHCDataContentTypeOctetStream;
-
+#import "KTVHCRange.h"
 
 @interface KTVHCDataRequest : NSObject
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)requestWithURLString:(NSString *)URLString headerFields:(NSDictionary *)headerFields;
+- (instancetype)initWithURL:(NSURL *)URL headers:(NSDictionary *)headers NS_DESIGNATED_INITIALIZER;
 
-@property (nonatomic, copy, readonly) NSString * URLString;
-@property (nonatomic, copy, readonly) NSDictionary * headerFields;
-
-/**
- *  default vaules:
- *  KTVHCDataContentTypeVideo
- *  KTVHCDataContentTypeVideo
- */
-@property (nonatomic, copy) NSArray <KTVHCDataContentType> * acceptContentTypes;
-
+@property (nonatomic, copy, readonly) NSURL *URL;
+@property (nonatomic, copy, readonly) NSDictionary *headers;
+@property (nonatomic, readonly) KTVHCRange range;
 
 @end

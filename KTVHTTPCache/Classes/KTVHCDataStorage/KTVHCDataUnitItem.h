@@ -8,26 +8,19 @@
 
 #import <Foundation/Foundation.h>
 
-
-@interface KTVHCDataUnitItem : NSObject <NSCoding, NSLocking>
-
+@interface KTVHCDataUnitItem : NSObject <NSCopying, NSCoding, NSLocking>
 
 + (instancetype)new NS_UNAVAILABLE;
-- (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)unitItemWithOffset:(long long)offset relativePath:(NSString *)relativePath;
+- (instancetype)initWithPath:(NSString *)path;
+- (instancetype)initWithPath:(NSString *)path offset:(uint64_t)offset;
 
-@property (nonatomic, assign, readonly) NSTimeInterval createTimeInterval;
+@property (nonatomic, copy, readonly) NSString *relativePath;
+@property (nonatomic, copy, readonly) NSString *absolutePath;
+@property (nonatomic, readonly) NSTimeInterval createTimeInterval;
+@property (nonatomic, readonly) long long offset;
+@property (nonatomic, readonly) long long length;
 
-@property (nonatomic, assign) BOOL writing;
-
-@property (nonatomic, assign, readonly) long long offset;
-@property (nonatomic, assign) long long length;
-
-@property (nonatomic, copy, readonly) NSString * relativePath;
-@property (nonatomic, copy, readonly) NSString * absolutePath;
-
-- (void)reloadFileLength;
-
+- (void)updateLength:(long long)length;
 
 @end

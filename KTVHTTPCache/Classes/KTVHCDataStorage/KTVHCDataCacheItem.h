@@ -10,17 +10,16 @@
 
 @class KTVHCDataCacheItemZone;
 
-
 @interface KTVHCDataCacheItem : NSObject
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-@property (nonatomic, copy, readonly) NSString * URLString;
-@property (nonatomic, assign, readonly) long long totalLength;
-@property (nonatomic, assign, readonly) long long cacheLength;
-@property (nonatomic, copy, readonly) NSArray <KTVHCDataCacheItemZone *> * zones;
+@property (nonatomic, copy, readonly) NSURL *URL;
+@property (nonatomic, copy, readonly) NSArray<KTVHCDataCacheItemZone *> *zones;
 
+@property (nonatomic, readonly) long long totalLength;
+@property (nonatomic, readonly) long long cacheLength;
+@property (nonatomic, readonly) long long vaildLength;
 
 @end

@@ -7,29 +7,24 @@
 //
 
 #import "KTVHCHTTPServer.h"
-#import "KTVHCHTTPURL.h"
 #import "KTVHCHTTPConnection.h"
 #import "KTVHCHTTPHeader.h"
+#import "KTVHCURLTool.h"
 #import "KTVHCLog.h"
-
 
 @interface KTVHCHTTPServer ()
 
-
-@property (nonatomic, strong) HTTPServer * coreHTTPServer;
-
+@property (nonatomic, strong) HTTPServer *server;
+@property (nonatomic) UIBackgroundTaskIdentifier backgroundTask;
+@property (nonatomic) BOOL wantsRunning;
 
 @end
 
-
 @implementation KTVHCHTTPServer
-
-
-#pragma mark - Init
 
 + (instancetype)server
 {
-    static KTVHCHTTPServer * obj = nil;
+    static KTVHCHTTPServer *obj = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         obj = [[self alloc] init];
@@ -39,9 +34,25 @@
 
 - (instancetype)init
 {
-    if (self = [super init])
-    {
+    if (self = [super init]) {
         KTVHCLogAlloc(self);
+        self.server = [[HTTPServer alloc] init];
+        [self.server setConnectionClass:[KTVHCHTTPConnection class]];
+        [self.server setType:@"_http._tcp."];
+        [self.server setPort:80];
+        self.backgroundTask = UIBackgroundTaskInvalid;
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(applicationDidEnterBackground)
+                                                     name:UIApplicationDidEnterBackgroundNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(applicationWillEnterForeground)
+                                                     name:UIApplicationWillEnterForegroundNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(HTTPConnectionDidDie)
+                                                     name:HTTPConnectionDidDieNotification
+                                                   object:nil];
     }
     return self;
 }
@@ -49,177 +60,114 @@
 - (void)dealloc
 {
     KTVHCLogDealloc(self);
+    [self stopInternal];
 }
 
-
-#pragma mark - Control
-
-- (BOOL)restart
+- (BOOL)isRunning
 {
-    KTVHCLogHTTPServer(@"restart begin");
-    
-    NSLog(@"restart connection count, %ld", [self.coreHTTPServer numberOfHTTPConnections]);
-    [self.coreHTTPServer stop];
-    
-    NSError * error = nil;
-    [self.coreHTTPServer start:&error];
-    if (error)
-    {
-        KTVHCLogHTTPServer(@"restart server failure : %@", error);
-    }
-    else
-    {
-        KTVHCLogHTTPServer(@"restart server success");
-    }
-    
-    KTVHCLogHTTPServer(@"restart end");
-    
-    return error == nil;
+    return self.server.isRunning;
 }
 
-- (void)start:(NSError * __autoreleasing *)error
+- (BOOL)start:(NSError **)error
 {
-    self.coreHTTPServer = [[HTTPServer alloc] init];
-    [self.coreHTTPServer setConnectionClass:[KTVHCHTTPConnection class]];
-    [self.coreHTTPServer setType:@"_http._tcp."];
-    
-    NSError * tempError = nil;
-    [self.coreHTTPServer start:&tempError];
-    if (tempError)
-    {
-        * error = tempError;
-        KTVHCLogHTTPServer(@"start server failure : %@", tempError);
-    }
-    else
-    {
-        KTVHCLogHTTPServer(@"start server success");
-    }
+    self.wantsRunning = YES;
+    return [self startInternal:error];
 }
 
 - (void)stop
 {
-    if (self.running)
-    {
-        [self.coreHTTPServer stop];
-        KTVHCLogHTTPServer(@"stop server");
+    self.wantsRunning = NO;
+    [self stopInternal];
+}
+
+- (NSURL *)URLWithOriginalURL:(NSURL *)URL
+{
+    if (!URL || URL.isFileURL || URL.absoluteString.length == 0) {
+        return URL;
+    }
+    if (!self.isRunning) {
+        return URL;
+    }
+    NSString *original = [[KTVHCURLTool tool] URLEncode:URL.absoluteString];
+    NSString *server = [NSString stringWithFormat:@"http://localhost:%d/", self.server.listeningPort];
+    NSString *extension = URL.pathExtension ? [NSString stringWithFormat:@".%@", URL.pathExtension] : @"";
+    NSString *URLString = [NSString stringWithFormat:@"%@request%@?url=%@", server, extension, original];
+    URL = [NSURL URLWithString:URLString];
+    KTVHCLogHTTPServer(@"%p, Return URL\nURL : %@", self, URL);
+    return URL;
+}
+
+#pragma mark - Internal
+
+- (BOOL)startInternal:(NSError **)error
+{
+    BOOL ret = [self.server start:error];
+    if (ret) {
+        KTVHCLogHTTPServer(@"%p, Start server success", self);
+    } else {
+        KTVHCLogHTTPServer(@"%p, Start server failed", self);
+    }
+    return ret;
+}
+
+- (void)stopInternal
+{
+    [self.server stop];
+}
+
+#pragma mark - Background Task
+
+- (void)applicationDidEnterBackground
+{
+    if (self.server.numberOfHTTPConnections > 0) {
+        KTVHCLogHTTPServer(@"%p, enter background", self);
+        [self beginBackgroundTask];
+    } else {
+        KTVHCLogHTTPServer(@"%p, enter background and stop server", self);
+        [self stopInternal];
     }
 }
 
-- (NSString *)URLStringWithOriginalURLString:(NSString *)urlString
+- (void)applicationWillEnterForeground
 {
-    if (self.running)
-    {
-        if ([self ping])
-        {
-            KTVHCHTTPURL * url = [KTVHCHTTPURL URLWithOriginalURLString:urlString];
-            return [url proxyURLStringWithServerPort:self.coreHTTPServer.listeningPort];
-        }
-        else
-        {
-            KTVHCLogHTTPServer(@"ping failured 1");
-            
-            BOOL success = [self restart];
-            if (success)
-            {
-                if ([self ping])
-                {
-                    KTVHCHTTPURL * url = [KTVHCHTTPURL URLWithOriginalURLString:urlString];
-                    return [url proxyURLStringWithServerPort:self.coreHTTPServer.listeningPort];
-                }
-                else
-                {
-                    KTVHCLogHTTPServer(@"ping failured 2");
-                }
-            }
-        }
+    KTVHCLogHTTPServer(@"%p, enter foreground", self);
+    if (self.backgroundTask == UIBackgroundTaskInvalid && self.wantsRunning) {
+        KTVHCLogHTTPServer(@"%p, restart server", self);
+        [self startInternal:nil];
     }
-    
-    KTVHCLogHTTPServer(@"return original URL string");
-    
-    return urlString;
+    [self endBackgroundTask];
 }
 
-
-#pragma mark - Ping
-
-- (BOOL)ping
+- (void)HTTPConnectionDidDie
 {
-    static BOOL result = NO;
-    static NSTimeInterval resultTime = 0;
-    
-    /*
-     if ([NSDate date].timeIntervalSince1970 - resultTime < 1)
-     {
-     return result;
-     }
-     */
-    
-    if (self.running)
-    {
-        static BOOL pinging = NO;
-        static NSCondition * pingCondition = nil;
-        static NSURLSession * pingSession = nil;
-        static NSURLSessionDataTask * pingDataTask = nil;
-        
-        static dispatch_once_t onceToken;
-        dispatch_once(&onceToken, ^{
-            pingCondition = [[NSCondition alloc] init];
-            NSURLSessionConfiguration * pingSessionConfiguration = [NSURLSessionConfiguration defaultSessionConfiguration];
-            pingSessionConfiguration.timeoutIntervalForRequest = 3;
-            pingSession = [NSURLSession sessionWithConfiguration:pingSessionConfiguration];
-        });
-        
-        [pingCondition lock];
-        if (pinging)
-        {
-            [pingCondition wait];
+    KTVHCLogHTTPServer(@"%p, connection did die", self);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground &&
+            self.server.numberOfHTTPConnections == 0) {
+            KTVHCLogHTTPServer(@"%p, server idle", self);
+            [self endBackgroundTask];
+            [self stopInternal];
         }
-        else
-        {
-            pingDataTask = [pingSession dataTaskWithURL:[[KTVHCHTTPURL URLForPing] proxyURLWithServerPort:self.coreHTTPServer.listeningPort]
-                                      completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-                                          if (!error && data.length > 0)
-                                          {
-                                              NSString * string = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                                              if ([string isEqualToString:[KTVHCHTTPConnection responsePingTokenString]])
-                                              {
-                                                  result = YES;
-                                              }
-                                              else
-                                              {
-                                                  result = NO;
-                                              }
-                                          }
-                                          else
-                                          {
-                                              result = NO;
-                                          }
-                                          resultTime = [NSDate date].timeIntervalSince1970;
-                                          
-                                          [pingCondition lock];
-                                          pinging = NO;
-                                          [pingCondition broadcast];
-                                          [pingCondition unlock];
-                                      }];
-            pinging = YES;
-            [pingDataTask resume];
-            [pingCondition wait];
-        }
-        [pingCondition unlock];
+    });
+}
+
+- (void)beginBackgroundTask
+{
+    KTVHCLogHTTPServer(@"%p, begin background task", self);
+    self.backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        KTVHCLogHTTPServer(@"%p, background task expiration", self);
+        [self endBackgroundTask];
+        [self stopInternal];
+    }];
+}
+
+- (void)endBackgroundTask
+{
+    if (self.backgroundTask != UIBackgroundTaskInvalid) {
+        KTVHCLogHTTPServer(@"%p, end background task", self);
+        [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTask];
+        self.backgroundTask = UIBackgroundTaskInvalid;
     }
-    
-    KTVHCLogHTTPServer(@"ping result, %d", result);
-    
-    return result;
 }
-
-
-#pragma mark - Setter/Getter
-
-- (BOOL)running
-{
-    return self.coreHTTPServer.isRunning;
-}
-
 
 @end

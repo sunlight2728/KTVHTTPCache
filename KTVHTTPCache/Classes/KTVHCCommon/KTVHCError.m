@@ -8,37 +8,49 @@
 
 #import "KTVHCError.h"
 
-
-NSString * const KTVHCErrorDomainResponseUnavailable    = @"KTVHCErrorDomainResponseUnavailable";       // player error
-NSString * const KTVHCErrorDomainNotEnoughDiskSpace     = @"KTVHCErrorDomainNotEnoughDiskSpace";        // player error
-
+NSString * const KTVHCErrorUserInfoKeyURL      = @"KTVHCErrorUserInfoKeyURL";
+NSString * const KTVHCErrorUserInfoKeyRequest  = @"KTVHCErrorUserInfoKeyRequest";
+NSString * const KTVHCErrorUserInfoKeyResponse = @"KTVHCErrorUserInfoKeyResponse";
 
 @implementation KTVHCError
 
-
-+ (NSError *)errorForResponseUnavailable:(NSString *)URLString
++ (NSError *)errorForResponseUnavailable:(NSURL *)URL
                                  request:(NSURLRequest *)request
-                                response:(NSHTTPURLResponse *)response
+                                response:(NSURLResponse *)response
 {
-    if (URLString.length <= 0) {
-        return nil;
+    NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+    if (URL) {
+        [userInfo setObject:URL forKey:KTVHCErrorUserInfoKeyURL];
     }
-    if (request.allHTTPHeaderFields.count <= 0) {
-        return nil;
+    if (request) {
+        [userInfo setObject:request forKey:KTVHCErrorUserInfoKeyRequest];
     }
-    if (response.URL.absoluteString.length <= 0) {
-        return nil;
+    if (response) {
+        [userInfo setObject:response forKey:KTVHCErrorUserInfoKeyResponse];
     }
-    if (response.allHeaderFields.count <= 0) {
-        return nil;
+    NSError *error = [NSError errorWithDomain:@"KTVHTTPCache error"
+                                         code:KTVHCErrorCodeResponseUnavailable
+                                     userInfo:userInfo];
+    return error;
+}
+
++ (NSError *)errorForUnsupportContentType:(NSURL *)URL
+                                  request:(NSURLRequest *)request
+                                 response:(NSURLResponse *)response
+{
+    NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+    if (URL) {
+        [userInfo setObject:URL forKey:KTVHCErrorUserInfoKeyURL];
     }
-    
-    NSError * error = [NSError errorWithDomain:KTVHCErrorDomainResponseUnavailable
-                                          code:KTVHCErrorCodeResponseUnavailable
-                                      userInfo:@{@"originalURL" : URLString,
-                                                 @"requestHeader" : request.allHTTPHeaderFields,
-                                                 @"responseURL" : response.URL.absoluteString,
-                                                 @"responseHeader" : response.allHeaderFields}];
+    if (request) {
+        [userInfo setObject:request forKey:KTVHCErrorUserInfoKeyRequest];
+    }
+    if (response) {
+        [userInfo setObject:response forKey:KTVHCErrorUserInfoKeyResponse];
+    }
+    NSError *error = [NSError errorWithDomain:@"KTVHTTPCache error"
+                                         code:KTVHCErrorCodeUnsupportContentType
+                                     userInfo:userInfo];
     return error;
 }
 
@@ -47,12 +59,20 @@ NSString * const KTVHCErrorDomainNotEnoughDiskSpace     = @"KTVHCErrorDomainNotE
                        totalCacheLength:(long long)totalCacheLength
                          maxCacheLength:(long long)maxCacheLength
 {
-    NSError * error = [NSError errorWithDomain:KTVHCErrorDomainNotEnoughDiskSpace
-                                          code:KTVHCErrorCodeNotEnoughDiskSpace
-                                      userInfo:@{@"totlaContentLength" : @(totlaContentLength),
-                                                 @"currentContentLength" : @(currentContentLength),
-                                                 @"totalCacheLength" : @(totalCacheLength),
-                                                 @"maxCacheLength" : @(maxCacheLength)}];
+    NSError *error = [NSError errorWithDomain:@"KTVHTTPCache error"
+                                         code:KTVHCErrorCodeNotEnoughDiskSpace
+                                     userInfo:@{@"totlaContentLength" : @(totlaContentLength),
+                                                @"currentContentLength" : @(currentContentLength),
+                                                @"totalCacheLength" : @(totalCacheLength),
+                                                @"maxCacheLength" : @(maxCacheLength)}];
+    return error;
+}
+
++ (NSError *)errorForException:(NSException *)exception
+{
+    NSError *error = [NSError errorWithDomain:@"KTVHTTPCache error"
+                                        code:KTVHCErrorCodeException
+                                    userInfo:exception.userInfo];
     return error;
 }
 

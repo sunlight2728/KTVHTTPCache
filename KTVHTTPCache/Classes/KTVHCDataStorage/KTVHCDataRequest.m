@@ -7,52 +7,19 @@
 //
 
 #import "KTVHCDataRequest.h"
-#import "KTVHCDataPrivate.h"
+#import "KTVHCData+Internal.h"
 #import "KTVHCLog.h"
-
-
-NSString * const KTVHCDataContentTypeVideo = @"video/";
-NSString * const KTVHCDataContentTypeAudio = @"audio/";
-NSString * const KTVHCDataContentTypeOctetStream = @"application/octet-stream";
-
-
-@interface KTVHCDataRequest ()
-
-
-@property (nonatomic, copy) NSString * URLString;
-@property (nonatomic, copy) NSDictionary * headerFields;
-
-@property (nonatomic, assign) long long rangeMin;
-@property (nonatomic, assign) long long rangeMax;
-
-
-@end
-
 
 @implementation KTVHCDataRequest
 
-
-+ (instancetype)requestWithURLString:(NSString *)URLString headerFields:(NSDictionary *)headerFields
+- (instancetype)initWithURL:(NSURL *)URL headers:(NSDictionary *)headers
 {
-    return [[self alloc] initWithURLString:URLString headerFields:headerFields];
-}
-
-- (instancetype)initWithURLString:(NSString *)URLString headerFields:(NSDictionary *)headerFields
-{
-    if (self = [super init])
-    {
+    if (self = [super init]) {
         KTVHCLogAlloc(self);
-        
-        self.rangeMin = KTVHCDataRequestRangeMinVaule;
-        self.rangeMax = KTVHCDataRequestRangeMaxVaule;
-        self.URLString = URLString;
-        self.headerFields = headerFields;
-        self.acceptContentTypes = @[KTVHCDataContentTypeVideo,
-                                    KTVHCDataContentTypeAudio,
-                                    KTVHCDataContentTypeOctetStream];
-        [self setupRange];
-        
-        KTVHCLogDataRequest(@"did setup\n%@\nrange, %lld, %lld\n%@", self.URLString, self.rangeMin, self.rangeMax, self.headerFields);
+        self->_URL = URL;
+        self->_headers = KTVHCRangeFillToRequestHeadersIfNeeded(KTVHCRangeFull(), headers);
+        self->_range = KTVHCRangeWithRequestHeaderValue([self.headers objectForKey:@"Range"]);
+        KTVHCLogDataRequest(@"%p Create data request\nURL : %@\nHeaders : %@\nRange : %@", self, self.URL, self.headers, KTVHCStringFromRange(self.range));
     }
     return self;
 }
@@ -62,26 +29,17 @@ NSString * const KTVHCDataContentTypeOctetStream = @"application/octet-stream";
     KTVHCLogDealloc(self);
 }
 
-
-- (void)setupRange
+- (KTVHCDataRequest *)newRequestWithRange:(KTVHCRange)range
 {
-    NSString * rangeString = [self.headerFields objectForKey:@"Range"];
-    if (rangeString.length > 0 && [rangeString hasPrefix:@"bytes="])
-    {
-        rangeString = [rangeString stringByReplacingOccurrencesOfString:@"bytes=" withString:@""];
-        NSArray <NSString *> * rangeArray = [rangeString componentsSeparatedByString:@"-"];
-        
-        if (rangeArray.count == 2)
-        {
-            if (rangeArray.firstObject.length > 0) {
-                self.rangeMin = rangeArray.firstObject.longLongValue;
-            }
-            if (rangeArray.lastObject.length > 0) {
-                self.rangeMax = rangeArray.lastObject.longLongValue;
-            }
-        }
-    }
+    NSDictionary *headers = KTVHCRangeFillToRequestHeaders(range, self.headers);
+    KTVHCDataRequest *obj = [[KTVHCDataRequest alloc] initWithURL:self.URL headers:headers];
+    return obj;
 }
 
+- (KTVHCDataRequest *)newRequestWithTotalLength:(long long)totalLength
+{
+    KTVHCRange range = KTVHCRangeWithEnsureLength(self.range, totalLength);
+    return [self newRequestWithRange:range];
+}
 
 @end

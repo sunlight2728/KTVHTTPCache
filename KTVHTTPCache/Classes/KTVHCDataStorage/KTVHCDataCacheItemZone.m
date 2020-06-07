@@ -7,36 +7,17 @@
 //
 
 #import "KTVHCDataCacheItemZone.h"
-#import "KTVHCDataPrivate.h"
-
-
-@interface KTVHCDataCacheItemZone ()
-
-
-@property (nonatomic, assign) long long offset;
-@property (nonatomic, assign) long long length;
-
-
-@end
-
+#import "KTVHCData+Internal.h"
 
 @implementation KTVHCDataCacheItemZone
 
-
-+ (instancetype)itemZoneWithOffset:(long long)offset length:(long long)length
-{
-    return [[self alloc] initWithOffset:offset length:length];
-}
-
 - (instancetype)initWithOffset:(long long)offset length:(long long)length
 {
-    if (self = [super init])
-    {
-        self.offset = offset;
-        self.length = length;
+    if (self = [super init]) {
+        self->_offset = offset;
+        self->_length = length;
     }
     return self;
 }
-
 
 @end

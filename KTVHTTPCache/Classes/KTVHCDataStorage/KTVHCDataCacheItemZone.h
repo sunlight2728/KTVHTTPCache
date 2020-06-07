@@ -10,12 +10,10 @@
 
 @interface KTVHCDataCacheItemZone : NSObject
 
-
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-@property (nonatomic, assign, readonly) long long offset;
-@property (nonatomic, assign, readonly) long long length;
-
+@property (nonatomic, readonly) long long offset;
+@property (nonatomic, readonly) long long length;
 
 @end

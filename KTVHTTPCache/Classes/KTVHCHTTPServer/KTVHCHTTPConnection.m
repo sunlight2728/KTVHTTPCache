@@ -7,26 +7,16 @@
 //
 
 #import "KTVHCHTTPConnection.h"
-#import "KTVHCHTTPRequest.h"
 #import "KTVHCHTTPResponse.h"
-#import "KTVHCHTTPResponsePing.h"
-#import "KTVHCHTTPURL.h"
-#import "KTVHCDataRequest.h"
+#import "KTVHCDataStorage.h"
+#import "KTVHCURLTool.h"
 #import "KTVHCLog.h"
-
 
 @implementation KTVHCHTTPConnection
 
-
-+ (NSString *)responsePingTokenString
-{
-    return KTVHCHTTPResponsePingTokenString;
-}
-
 - (id)initWithAsyncSocket:(GCDAsyncSocket *)newSocket configuration:(HTTPConfig *)aConfig
 {
-    if (self = [super initWithAsyncSocket:newSocket configuration:aConfig])
-    {
+    if (self = [super initWithAsyncSocket:newSocket configuration:aConfig]) {
         KTVHCLogAlloc(self);
     }
     return self;
@@ -37,39 +27,14 @@
     KTVHCLogDealloc(self);
 }
 
-
 - (NSObject<HTTPResponse> *)httpResponseForMethod:(NSString *)method URI:(NSString *)path
 {
-    KTVHCLogHTTPConnection(@"receive request, %@, %@", method, path);
-    
-    KTVHCHTTPURL * URL = [KTVHCHTTPURL URLWithServerURIString:path];
-    
-    switch (URL.type)
-    {
-        case KTVHCHTTPURLTypePing:
-        {
-            KTVHCHTTPResponsePing * currentResponse = [KTVHCHTTPResponsePing responseWithConnection:self];
-            
-            return currentResponse;
-        }
-        case KTVHCHTTPURLTypeContent:
-        {
-            KTVHCHTTPRequest * currentRequest = [KTVHCHTTPRequest requestWithOriginalURLString:URL.originalURLString];
-            
-            currentRequest.isHeaderComplete = request.isHeaderComplete;
-            currentRequest.allHTTPHeaderFields = request.allHeaderFields;
-            currentRequest.URL = request.url;
-            currentRequest.method = request.method;
-            currentRequest.statusCode = request.statusCode;
-            currentRequest.version = request.version;
-            
-            KTVHCDataRequest * dataRequest = [currentRequest dataRequest];
-            KTVHCHTTPResponse * currentResponse = [KTVHCHTTPResponse responseWithConnection:self dataRequest:dataRequest];
-            
-            return currentResponse;
-        }
-    }
-    return nil;
+    KTVHCLogHTTPConnection(@"%p, Receive request\nmethod : %@\npath : %@\nURL : %@", self, method, path, request.url);
+    NSDictionary<NSString *,NSString *> *parameters = [[KTVHCURLTool tool] parseQuery:request.url.query];
+    NSURL *URL = [NSURL URLWithString:[parameters objectForKey:@"url"]];
+    KTVHCDataRequest *dataRequest = [[KTVHCDataRequest alloc] initWithURL:URL headers:request.allHeaderFields];
+    KTVHCHTTPResponse *response = [[KTVHCHTTPResponse alloc] initWithConnection:self dataRequest:dataRequest];
+    return response;
 }
 
 

@@ -12,42 +12,37 @@
 @class KTVHCDataRequest;
 @class KTVHCDataResponse;
 
-
 @protocol KTVHCDataReaderDelegate <NSObject>
 
-- (void)readerHasAvailableData:(KTVHCDataReader *)reader;
-- (void)readerDidFinishPrepare:(KTVHCDataReader *)reader;
-- (void)reader:(KTVHCDataReader *)reader didFailure:(NSError *)error;
+- (void)ktv_readerDidPrepare:(KTVHCDataReader *)reader;
+- (void)ktv_readerHasAvailableData:(KTVHCDataReader *)reader;
+- (void)ktv_reader:(KTVHCDataReader *)reader didFailWithError:(NSError *)error;
 
 @end
 
-
-@interface KTVHCDataReader : NSObject
-
+@interface KTVHCDataReader : NSObject <NSLocking>
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
 @property (nonatomic, weak) id <KTVHCDataReaderDelegate> delegate;
-@property (nonatomic, strong, readonly) dispatch_queue_t delegateQueue;     // a serial queue. don't block it.
-
 @property (nonatomic, strong) id object;
 
-@property (nonatomic, strong, readonly) KTVHCDataRequest * request;
-@property (nonatomic, strong, readonly) KTVHCDataResponse * response;
+@property (nonatomic, strong, readonly) KTVHCDataRequest *request;
+@property (nonatomic, strong, readonly) KTVHCDataResponse *response;
 
-@property (nonatomic, strong, readonly) NSError * error;
+@property (nonatomic, copy, readonly) NSError *error;
 
-@property (nonatomic, assign, readonly) BOOL didClose;
-@property (nonatomic, assign, readonly) BOOL didFinishPrepare;
-@property (nonatomic, assign, readonly) BOOL didFinishRead;
+@property (nonatomic, readonly, getter=isPrepared) BOOL prepared;
+@property (nonatomic, readonly, getter=isFinished) BOOL finished;
+@property (nonatomic, readonly, getter=isClosed) BOOL closed;
 
-@property (nonatomic, assign, readonly) long long readOffset;
+@property (nonatomic, readonly) long long readedLength;
+@property (nonatomic, readonly) double progress;
 
 - (void)prepare;
-- (void)close;      // must call.
+- (void)close;
 
 - (NSData *)readDataOfLength:(NSUInteger)length;
-
 
 @end

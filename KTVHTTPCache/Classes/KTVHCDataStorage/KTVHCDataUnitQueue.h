@@ -9,22 +9,19 @@
 #import <Foundation/Foundation.h>
 #import "KTVHCDataUnit.h"
 
-
 @interface KTVHCDataUnitQueue : NSObject
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)unitQueueWithArchiverPath:(NSString *)archiverPath;
+- (instancetype)initWithPath:(NSString *)path NS_DESIGNATED_INITIALIZER;
 
-- (NSArray <KTVHCDataUnit *> *)allUnits;
-- (KTVHCDataUnit *)unitWithUniqueIdentifier:(NSString *)uniqueIdentifier;
+- (NSArray<KTVHCDataUnit *> *)allUnits;
+- (KTVHCDataUnit *)unitWithKey:(NSString *)key;
 
 - (void)putUnit:(KTVHCDataUnit *)unit;
 - (void)popUnit:(KTVHCDataUnit *)unit;
 
 - (void)archive;
-
 
 @end

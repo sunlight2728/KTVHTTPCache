@@ -10,38 +10,22 @@
 #import "KTVHCDataUnit.h"
 #import "KTVHCDataCacheItem.h"
 
-
 @interface KTVHCDataUnitPool : NSObject
-
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)unitPool;
++ (instancetype)pool;
 
-- (KTVHCDataUnit *)unitWithURLString:(NSString *)URLString;
+- (KTVHCDataUnit *)unitWithURL:(NSURL *)URL;
 
+- (long long)totalCacheLength;
 
-#pragma mark - Cache Control
+- (NSArray<KTVHCDataCacheItem *> *)allCacheItem;
+- (KTVHCDataCacheItem *)cacheItemWithURL:(NSURL *)URL;
 
-@property (nonatomic, assign, readonly) long long totalCacheLength;
-
-- (NSArray <KTVHCDataCacheItem *> *)allCacheItem;
-- (KTVHCDataCacheItem *)cacheItemWithURLString:(NSString *)URLString;
-
-- (void)deleteUnitWithURLString:(NSString *)URLString;
-- (void)deleteUnitsWithMinSize:(long long)minSize;
+- (void)deleteUnitWithURL:(NSURL *)URL;
+- (void)deleteUnitsWithLength:(long long)length;
 - (void)deleteAllUnits;
-
-- (void)mergeUnitWithURLString:(NSString *)URLString;
-- (void)mergeAllUnits;
-
-
-#pragma mark - Unit Control
-
-- (void)unit:(NSString *)unitURLString insertUnitItem:(KTVHCDataUnitItem *)unitItem;
-- (void)unit:(NSString *)unitURLString updateRequestHeaderFields:(NSDictionary *)requestHeaderFields;
-- (void)unit:(NSString *)unitURLString updateResponseHeaderFields:(NSDictionary *)responseHeaderFields;
-
 
 @end

@@ -7,26 +7,15 @@
 //
 
 #import "KTVHCDataStorage.h"
+#import "KTVHCData+Internal.h"
 #import "KTVHCDataUnitPool.h"
-#import "KTVHCDataPrivate.h"
 #import "KTVHCLog.h"
-
-@interface KTVHCDataStorage () <KTVHCDataUnitWorkingDelegate>
-
-
-@property (nonatomic, strong) NSCondition * condition;
-@property (nonatomic, strong) NSOperationQueue * operationQueue;
-
-
-@end
-
 
 @implementation KTVHCDataStorage
 
-
 + (instancetype)storage
 {
-    static KTVHCDataStorage * obj = nil;
+    static KTVHCDataStorage *obj = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         obj = [[self alloc] init];
@@ -36,136 +25,63 @@
 
 - (instancetype)init
 {
-    if (self = [super init])
-    {
+    if (self = [super init]) {
         self.maxCacheLength = 500 * 1024 * 1024;
-        self.condition = [[NSCondition alloc] init];
-        self.operationQueue = [[NSOperationQueue alloc] init];
-        self.operationQueue.maxConcurrentOperationCount = 1;
     }
     return self;
 }
 
-
-- (KTVHCDataReader *)concurrentReaderWithRequest:(KTVHCDataRequest *)request
+- (NSURL *)completeFileURLWithURL:(NSURL *)URL
 {
-    KTVHCLogDataStorage(@"concurrent reader, %@", request.URLString);
-    
-    return [self readerWithRequest:request concurrent:YES];
+    KTVHCDataUnit *unit = [[KTVHCDataUnitPool pool] unitWithURL:URL];
+    NSURL *completeURL = unit.completeURL;
+    [unit workingRelease];
+    return completeURL;
 }
 
-- (KTVHCDataReader *)serialReaderWithRequest:(KTVHCDataRequest *)request
+- (KTVHCDataReader *)readerWithRequest:(KTVHCDataRequest *)request
 {
-    KTVHCLogDataStorage(@"serial reader sync, %@", request.URLString);
-    
-    return [self readerWithRequest:request concurrent:NO];
-}
-
-- (void)serialReaderWithRequest:(KTVHCDataRequest *)request completionHandler:(void (^)(KTVHCDataReader *))completionHandler
-{
-    if (!completionHandler) {
-        return;
-    }
-    
-    KTVHCLogDataStorage(@"serial reader async begin, %@", request.URLString);
-    
-    __weak typeof(self) weakSelf = self;
-    [self.operationQueue addOperationWithBlock:^{
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (completionHandler) {
-            
-            KTVHCLogDataStorage(@"serial reader async end, %@", request.URLString);
-            
-            completionHandler([strongSelf serialReaderWithRequest:request]);
-        }
-    }];
-}
-
-- (KTVHCDataReader *)readerWithRequest:(KTVHCDataRequest *)request concurrent:(BOOL)concurrent;
-{
-    if (!request || request.URLString.length <= 0) {
+    if (!request || request.URL.absoluteString.length <= 0) {
+        KTVHCLogDataStorage(@"Invaild reader request, %@", request.URL);
         return nil;
     }
-    
-    [self.condition lock];
-    KTVHCDataUnit * unit = [[KTVHCDataUnitPool unitPool] unitWithURLString:request.URLString];
-    
-    if (!concurrent)
-    {
-        while (unit.working)
-        {
-            KTVHCLogDataStorage(@"wait begin, %@", request.URLString);
-            
-            unit.workingDelegate = self;
-            [self.condition wait];
-            
-            KTVHCLogDataStorage(@"wait end, %@", request.URLString);
-        }
-    }
-    
-    [[KTVHCDataUnitPool unitPool] unit:request.URLString updateRequestHeaderFields:request.headerFields];
-    KTVHCDataReader * reader = [KTVHCDataReader readerWithUnit:unit
-                                                       request:request];
-    
-    KTVHCLogDataStorage(@"create reader finished, %@", request.URLString);
-    
-    [self.condition unlock];
+    KTVHCDataReader *reader = [[KTVHCDataReader alloc] initWithRequest:request];
     return reader;
 }
 
+- (KTVHCDataLoader *)loaderWithRequest:(KTVHCDataRequest *)request
+{
+    if (!request || request.URL.absoluteString.length <= 0) {
+        KTVHCLogDataStorage(@"Invaild loader request, %@", request.URL);
+        return nil;
+    }
+    KTVHCDataLoader *loader = [[KTVHCDataLoader alloc] initWithRequest:request];
+    return loader;
+}
 
-#pragma mark - Cache Control
+- (KTVHCDataCacheItem *)cacheItemWithURL:(NSURL *)URL
+{
+    return [[KTVHCDataUnitPool pool] cacheItemWithURL:URL];
+}
+
+- (NSArray<KTVHCDataCacheItem *> *)allCacheItems
+{
+    return [[KTVHCDataUnitPool pool] allCacheItem];
+}
 
 - (long long)totalCacheLength
 {
-    return [[KTVHCDataUnitPool unitPool] totalCacheLength];
+    return [[KTVHCDataUnitPool pool] totalCacheLength];
 }
 
-- (NSArray <KTVHCDataCacheItem *> *)fetchAllCacheItem
+- (void)deleteCacheWithURL:(NSURL *)URL
 {
-    return [[KTVHCDataUnitPool unitPool] allCacheItem];
+    [[KTVHCDataUnitPool pool] deleteUnitWithURL:URL];
 }
 
-- (KTVHCDataCacheItem *)fetchCacheItemWithURLString:(NSString *)URLString
+- (void)deleteAllCaches
 {
-    return [[KTVHCDataUnitPool unitPool] cacheItemWithURLString:URLString];
+    [[KTVHCDataUnitPool pool] deleteAllUnits];
 }
-
-- (void)deleteAllCache
-{
-    [[KTVHCDataUnitPool unitPool] deleteAllUnits];
-}
-
-- (void)deleteCacheWithURLString:(NSString *)URLString
-{
-    [[KTVHCDataUnitPool unitPool] deleteUnitWithURLString:URLString];
-}
-
-- (void)mergeAllCache
-{
-    [[KTVHCDataUnitPool unitPool] mergeAllUnits];
-}
-
-- (void)mergeCacheWithURLString:(NSString *)URLString
-{
-    [[KTVHCDataUnitPool unitPool] mergeUnitWithURLString:URLString];
-}
-
-
-#pragma mark - KTVHCDataUnitWorkingDelegate
-
-- (void)unitDidStopWorking:(KTVHCDataUnit *)unit
-{
-    [self.condition lock];
-    
-    KTVHCLogDataStorage(@"unit did stop working begin, %@", unit.URLString);
-    
-    [self.condition signal];
-    
-    KTVHCLogDataStorage(@"unit did stop working end, %@", unit.URLString);
-    
-    [self.condition unlock];
-}
-
 
 @end

@@ -7,41 +7,30 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "KTVHCDataSourceProtocol.h"
+#import "KTVHCDataSource.h"
 
 @class KTVHCDataFileSource;
 
-
 @protocol KTVHCDataFileSourceDelegate <NSObject>
 
-@optional
-- (void)fileSourceDidFinishPrepare:(KTVHCDataFileSource *)fileSource;
+- (void)ktv_fileSourceDidPrepare:(KTVHCDataFileSource *)fileSource;
+- (void)ktv_fileSource:(KTVHCDataFileSource *)fileSource didFailWithError:(NSError *)error;
 
 @end
 
-
-@interface KTVHCDataFileSource : NSObject <KTVHCDataSourceProtocol>
-
+@interface KTVHCDataFileSource : NSObject <KTVHCDataSource>
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
 
-+ (instancetype)sourceWithFilePath:(NSString *)filePath
-                            offset:(long long)offset
-                            length:(long long)length
-                       startOffset:(long long)startOffset
-                    needReadLength:(long long)needReadLength;
+- (instancetype)initWithPath:(NSString *)path range:(KTVHCRange)range readRange:(KTVHCRange)readRange NS_DESIGNATED_INITIALIZER;
 
-@property (nonatomic, assign, readonly) long long startOffset;
-@property (nonatomic, assign, readonly) long long needReadLength;
+@property (nonatomic, copy, readonly) NSString *path;
+@property (nonatomic, readonly) KTVHCRange readRange;
 
-
-#pragma mark - Delegate
-
-@property (nonatomic, weak, readonly) id <KTVHCDataFileSourceDelegate> delegate;
+@property (nonatomic, weak, readonly) id<KTVHCDataFileSourceDelegate> delegate;
 @property (nonatomic, strong, readonly) dispatch_queue_t delegateQueue;
 
-- (void)setDelegate:(id <KTVHCDataFileSourceDelegate>)delegate delegateQueue:(dispatch_queue_t)delegateQueue;
-
+- (void)setDelegate:(id<KTVHCDataFileSourceDelegate>)delegate delegateQueue:(dispatch_queue_t)delegateQueue;
 
 @end

@@ -7,54 +7,57 @@
 //
 
 #import "KTVHCDataUnitItem.h"
-#import "KTVHCPathTools.h"
+#import "KTVHCPathTool.h"
 #import "KTVHCLog.h"
-
 
 @interface KTVHCDataUnitItem ()
 
-
-@property (nonatomic, strong) NSLock * coreLock;
-
-@property (nonatomic, assign) NSTimeInterval createTimeInterval;
-
-@property (nonatomic, assign) long long offset;
-@property (nonatomic, copy) NSString * relativePath;
-@property (nonatomic, copy) NSString * absolutePath;
-
+@property (nonatomic, strong) NSRecursiveLock *coreLock;
 
 @end
 
-
 @implementation KTVHCDataUnitItem
 
-
-+ (instancetype)unitItemWithOffset:(long long)offset relativePath:(NSString *)relativePath
+- (id)copyWithZone:(NSZone *)zone
 {
-    return [[self alloc] initWithOffset:offset relativePath:relativePath];
+    [self lock];
+    KTVHCDataUnitItem *obj = [[KTVHCDataUnitItem alloc] init];
+    obj->_relativePath = self.relativePath;
+    obj->_absolutePath = self.absolutePath;
+    obj->_createTimeInterval = self.createTimeInterval;
+    obj->_offset = self.offset;
+    obj->_length = self.length;
+    [self unlock];
+    return obj;
 }
 
-- (instancetype)initWithOffset:(long long)offset relativePath:(NSString *)relativePath
+- (instancetype)initWithPath:(NSString *)path
 {
-    if (self = [super init])
-    {
-        KTVHCLogAlloc(self);
-        self.createTimeInterval = [NSDate date].timeIntervalSince1970;
-        self.offset = offset;
-        self.relativePath = relativePath;
-        [self prepare];
+    return [self initWithPath:path offset:0];
+}
+
+- (instancetype)initWithPath:(NSString *)path offset:(uint64_t)offset
+{
+    if (self = [super init]) {
+        self->_createTimeInterval = [NSDate date].timeIntervalSince1970;
+        self->_relativePath = [KTVHCPathTool converToRelativePath:path];
+        self->_absolutePath = [KTVHCPathTool converToAbsoultePath:path];
+        self->_offset = offset;
+        self->_length = [KTVHCPathTool sizeAtPath:self.absolutePath];
+        [self commonInit];
     }
     return self;
 }
 
 - (instancetype)initWithCoder:(NSCoder *)aDecoder
 {
-    if (self = [super init])
-    {
-        self.createTimeInterval = [[aDecoder decodeObjectForKey:@"createTimeInterval"] doubleValue];
-        self.relativePath = [aDecoder decodeObjectForKey:@"relativePath"];
-        self.offset = [[aDecoder decodeObjectForKey:@"offset"] longLongValue];
-        [self prepare];
+    if (self = [super init]) {
+        self->_createTimeInterval = [[aDecoder decodeObjectForKey:@"createTimeInterval"] doubleValue];
+        self->_relativePath = [aDecoder decodeObjectForKey:@"relativePath"];
+        self->_absolutePath = [KTVHCPathTool converToAbsoultePath:self.relativePath];
+        self->_offset = [[aDecoder decodeObjectForKey:@"offset"] longLongValue];
+        self->_length = [KTVHCPathTool sizeAtPath:self.absolutePath];
+        [self commonInit];
     }
     return self;
 }
@@ -71,39 +74,25 @@
     KTVHCLogDealloc(self);
 }
 
-
-- (void)prepare
+- (void)commonInit
 {
-    self.coreLock = [[NSLock alloc] init];
-    self.absolutePath = [KTVHCPathTools absolutePathWithRelativePath:self.relativePath];
-    self.length = [KTVHCPathTools sizeOfItemAtFilePath:self.absolutePath];
+    KTVHCLogAlloc(self);
+    KTVHCLogDataUnitItem(@"%p, Create Unit Item\nabsolutePath : %@\nrelativePath : %@\nOffset : %lld\nLength : %lld", self, self.absolutePath, self.relativePath, self.offset, self.length);
 }
 
-
-#pragma mark - Setter
-
-- (void)setLength:(long long)length
+- (void)updateLength:(long long)length
 {
     [self lock];
-    _length = length;
-    
-    KTVHCLogDataUnitItem(@"set length, %lld", length);
-    
+    self->_length = length;
+    KTVHCLogDataUnitItem(@"%p, Set length : %lld", self, length);
     [self unlock];
 }
-
-- (void)reloadFileLength
-{
-    [self lock];
-    _length = [KTVHCPathTools sizeOfItemAtFilePath:self.absolutePath];
-    [self unlock];
-}
-
-
-#pragma mark - NSLocking
 
 - (void)lock
 {
+    if (!self.coreLock) {
+        self.coreLock = [[NSRecursiveLock alloc] init];
+    }
     [self.coreLock lock];
 }
 
@@ -111,6 +100,5 @@
 {
     [self.coreLock unlock];
 }
-
 
 @end
